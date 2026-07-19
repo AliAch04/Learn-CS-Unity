@@ -6,7 +6,7 @@ using UnityEngine.Animations;
 public class PlayerMovement : MonoBehaviour
 {
     [Header("Movement")]
-    public float moveSpeed = 10f;
+    public float moveSpeed = 8f;
     public Transform orient;
     public float groundDrag = 5f;
 
@@ -16,9 +16,10 @@ public class PlayerMovement : MonoBehaviour
     bool grounded;
 
     [Header("Jump Setting")]
-    public float jumpForce = 10f;
+    public float jumpForce = 13f;
     public float jumpCoolDown = 0.25f;
-    public float airMultiplier = 0.4f;
+    public float gravityMultiplier = 2.5f;
+    public float airMultiplier = 0.1f;
     bool ableToJump;
     public KeyCode JumpKey = KeyCode.Space;
 
@@ -34,16 +35,18 @@ public class PlayerMovement : MonoBehaviour
         rb.freezeRotation = true;
 
         ableToJump = true;
+        rb.useGravity = false;
     }
 
     private void Update()
     {
         // Ground check
-        grounded = Physics.Raycast(transform.position, -transform.up, playerHeight * 0.5f + 0.2f, whatIsGound);
-
+        grounded = Physics.Raycast(transform.position, Vector3.down, playerHeight * 0.5f + 0.2f, whatIsGound);
+        Debug.DrawRay(transform.position, Vector3.down * (playerHeight * 0.5f + 0.2f), grounded ? Color.green : Color.red);
+        
         // Apply the drag
         if (grounded) rb.drag = groundDrag;
-        else rb.drag = 0f;
+        else rb.drag = 0.5f;
 
         MyInput();
         SpeedControlle();
@@ -53,6 +56,7 @@ public class PlayerMovement : MonoBehaviour
     private void FixedUpdate()
     {
         MovePlayer();
+        ApplyCustomGravity();
     }
 
     private void MyInput()
@@ -72,10 +76,10 @@ public class PlayerMovement : MonoBehaviour
     private void MovePlayer()
     {
         // Calculate the vector direction
-        direction = orient.right * hozInput + new Vector3(0,0,0) + orient.forward * verInput;
+        direction = orient.right * hozInput + orient.forward * verInput;
 
         // On ground
-        if(grounded)
+        if (grounded)
             rb.AddForce(direction.normalized * moveSpeed * 10f, ForceMode.Force);
 
         // In Air
@@ -84,6 +88,20 @@ public class PlayerMovement : MonoBehaviour
             rb.AddForce(direction.normalized * moveSpeed * 10f * airMultiplier, ForceMode.Force);
         }
 
+    }
+
+    private void ApplyCustomGravity()
+    {
+        // Applies a stronger realistic downward force
+        if (!grounded)
+        {
+            rb.AddForce(Vector3.down * (9.81f * gravityMultiplier), ForceMode.Force);
+        }
+        else
+        {
+            // Standard light gravity
+            rb.AddForce(Vector3.down * 9.81f, ForceMode.Force);
+        }
     }
 
     private void SpeedControlle()
