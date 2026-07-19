@@ -17,6 +17,18 @@ public class PlayerCamController : MonoBehaviour
     {
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
+
+        // Cache the current rotation angles on startup so no snap to 0
+        if (camHolder != null)
+        {
+            Vector3 currentRotation = camHolder.eulerAngles;
+
+            // Normalize angles 
+            rotXCam = currentRotation.x;
+            if (rotXCam > 180) rotXCam -= 360f;
+
+            rotYCam = currentRotation.y;
+        }
     }
 
     private void Update()
