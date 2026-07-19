@@ -15,6 +15,12 @@ public class PlayerMovement : MonoBehaviour
     public LayerMask whatIsGound;
     bool grounded;
 
+    [Header("Jump Setting")]
+    public float jumpForce = 5f;
+    public float jumpCoolDown;
+    public float airMultiplier;
+    bool ableToJump;
+
     float hozInput;
     float verInput;
     Vector3 direction;
@@ -30,7 +36,7 @@ public class PlayerMovement : MonoBehaviour
     private void Update()
     {
         // Ground check
-        grounded = Physics.Raycast(transform.position, - transform.up, playerHeight * 0.5f + 0.2f, whatIsGound);
+        grounded = Physics.Raycast(transform.position, -transform.up, playerHeight * 0.5f + 0.2f, whatIsGound);
 
         // Apply the drag
         if (grounded) rb.drag = groundDrag;
@@ -38,6 +44,11 @@ public class PlayerMovement : MonoBehaviour
 
         MyInput();
         SpeedControlle();
+
+        if (Input.GetKeyDown(KeyCode.Space))
+        {
+            Jump();
+        }
     }
 
     private void FixedUpdate()
@@ -69,6 +80,19 @@ public class PlayerMovement : MonoBehaviour
             Vector3 limitedSpeed = flatVeclocity.normalized * moveSpeed;
             rb.velocity = new Vector3(limitedSpeed.x, rb.velocity.y, limitedSpeed.z);
         }
+    }
+
+    private void Jump()
+    {
+        if (grounded) ableToJump = true;
+        else ableToJump = false;
+
+        //Debug.Log($"Able to Jump: {ableToJump}");
+        if (ableToJump)
+        {
+            rb.AddForce(transform.up * jumpForce, ForceMode.Impulse); 
+        }
+            
     }
 
 }
