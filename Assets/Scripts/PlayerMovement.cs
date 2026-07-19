@@ -40,16 +40,20 @@ public class PlayerMovement : MonoBehaviour
 
     private void Update()
     {
-        // Ground check
-        grounded = Physics.Raycast(transform.position, Vector3.down, playerHeight * 0.5f + 0.2f, whatIsGound);
-        Debug.DrawRay(transform.position, Vector3.down * (playerHeight * 0.5f + 0.2f), grounded ? Color.green : Color.red);
-        
+        // Sweeps a sphere downward to perfectly match the rounded bottom of a capsule
+        float sphereRadius = 0.4f; 
+        float castDistance = (playerHeight * 0.5f) - sphereRadius + 0.2f;
+
+        grounded = Physics.SphereCast(transform.position, sphereRadius, Vector3.down, out _, castDistance, whatIsGound);
+
+        Debug.DrawRay(transform.position, Vector3.down * (castDistance + sphereRadius), grounded ? Color.green : Color.red);
+
         // Apply the drag
         if (grounded) rb.drag = groundDrag;
         else rb.drag = 0.5f;
 
         MyInput();
-        SpeedControlle();
+        SpeedController();
 
     }
 
@@ -104,7 +108,7 @@ public class PlayerMovement : MonoBehaviour
         }
     }
 
-    private void SpeedControlle()
+    private void SpeedController()
     {
         Vector3 flatVeclocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
         //Debug.Log(flatVeclocity.magnitude);
