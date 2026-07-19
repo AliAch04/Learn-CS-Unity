@@ -16,10 +16,11 @@ public class PlayerMovement : MonoBehaviour
     bool grounded;
 
     [Header("Jump Setting")]
-    public float jumpForce = 5f;
-    public float jumpCoolDown;
-    public float airMultiplier;
+    public float jumpForce = 10f;
+    public float jumpCoolDown = 0.25f;
+    public float airMultiplier = 0.4f;
     bool ableToJump;
+    public KeyCode JumpKey = KeyCode.Space;
 
     float hozInput;
     float verInput;
@@ -31,6 +32,8 @@ public class PlayerMovement : MonoBehaviour
     {
         rb = GetComponent<Rigidbody>();
         rb.freezeRotation = true;
+
+        ableToJump = true;
     }
 
     private void Update()
@@ -45,10 +48,6 @@ public class PlayerMovement : MonoBehaviour
         MyInput();
         SpeedControlle();
 
-        if (Input.GetKeyDown(KeyCode.Space))
-        {
-            Jump();
-        }
     }
 
     private void FixedUpdate()
@@ -60,6 +59,14 @@ public class PlayerMovement : MonoBehaviour
     {
         hozInput = Input.GetAxisRaw("Horizontal");
         verInput = Input.GetAxisRaw("Vertical");
+
+        if (Input.GetKeyDown(JumpKey) && ableToJump && grounded)
+        {
+            ableToJump = false;
+            Jump();
+            // Call Reset function after delay (jumpCoolDown)
+            Invoke(nameof(ResetJump), jumpCoolDown);
+        }
     }
 
     private void MovePlayer()
@@ -67,7 +74,16 @@ public class PlayerMovement : MonoBehaviour
         // Calculate the vector direction
         direction = orient.right * hozInput + new Vector3(0,0,0) + orient.forward * verInput;
 
-        rb.AddForce(direction.normalized * moveSpeed * 10f, ForceMode.Force);
+        // On ground
+        if(grounded)
+            rb.AddForce(direction.normalized * moveSpeed * 10f, ForceMode.Force);
+
+        // In Air
+        else if (!grounded)
+        {
+            rb.AddForce(direction.normalized * moveSpeed * 10f * airMultiplier, ForceMode.Force);
+        }
+
     }
 
     private void SpeedControlle()
@@ -84,15 +100,15 @@ public class PlayerMovement : MonoBehaviour
 
     private void Jump()
     {
-        if (grounded) ableToJump = true;
-        else ableToJump = false;
-
-        //Debug.Log($"Able to Jump: {ableToJump}");
-        if (ableToJump)
-        {
-            rb.AddForce(transform.up * jumpForce, ForceMode.Impulse); 
-        }
+        // Reset the y velocity
+        rb.velocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
+        rb.AddForce(transform.up * jumpForce, ForceMode.Impulse); 
             
+    }
+
+    private void ResetJump()
+    {
+        ableToJump = true;
     }
 
 }
