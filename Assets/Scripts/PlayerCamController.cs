@@ -1,42 +1,43 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class PlayerCamController : MonoBehaviour
 {
-    [SerializeField] float sensX; 
-    [SerializeField] float sensY;
+    [Header("Sensitivity Settings")]
+    [SerializeField] private float sensX = 400f;
+    [SerializeField] private float sensY = 400f;
 
-    [SerializeField] Transform playerOrient;
+    [Header("References")]
+    [SerializeField] private Transform playerOrient;
+    [SerializeField] private Transform camHolder; 
 
-    float rotXCam;
-    float rotYCam;
-    void Start()
+    private float rotXCam;
+    private float rotYCam;
+
+    private void Start()
     {
-        // Lock the cursor in the center of the screen AND make it invisible 
         Cursor.lockState = CursorLockMode.Locked;
-        Cursor.visible = true;
-        
+        Cursor.visible = false;
     }
 
-    // Update is called once per frame
-    void Update()
+    private void Update()
     {
-        float mouseX = Input.GetAxisRaw("Mouse X") * Time.deltaTime * sensX;
-        //Debug.Log(mouseX);
-        float mouseY = Input.GetAxisRaw("Mouse Y") * Time.deltaTime * sensY;
+        float mouseX = Input.GetAxisRaw("Mouse X") * sensX * Time.deltaTime;
+        float mouseY = Input.GetAxisRaw("Mouse Y") * sensY * Time.deltaTime;
 
         rotYCam += mouseX;
         rotXCam -= mouseY;
-        Debug.Log($"(X : {rotXCam}, Y : {rotYCam})");
-
-        // Set limit to X rotation
         rotXCam = Mathf.Clamp(rotXCam, -80f, 80f);
 
-        // Apply the movements to the Cam & player
-        transform.rotation = Quaternion.Euler(rotXCam, rotYCam, 0);
-        playerOrient.rotation = Quaternion.Euler(0, rotYCam, 0);
+        // Rotate the HOLDER instead of the camera child to maintain the pivot
+        if (camHolder != null)
+        {
+            camHolder.rotation = Quaternion.Euler(rotXCam, rotYCam, 0);
+        }
 
-
+        // Rotate player body orientation on Y axis
+        if (playerOrient != null)
+        {
+            playerOrient.rotation = Quaternion.Euler(0, rotYCam, 0);
+        }
     }
 }

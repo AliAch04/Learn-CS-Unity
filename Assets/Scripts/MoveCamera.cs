@@ -1,13 +1,15 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class MoveCamera : MonoBehaviour
 {
-    public Transform camPos;
+    [SerializeField] private Transform camPos;
 
-    private void Update()
+    // LateUpdate prevents camera jittering/stuttering
+    private void LateUpdate()
     {
-        transform.position = camPos.position;
+        if (camPos != null)
+        {
+            transform.position = camPos.position;
+        }
     }
 }
