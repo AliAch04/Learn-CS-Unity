@@ -46,6 +46,15 @@ public class PlayerMovement : MonoBehaviour
     bool ableToJump;
     public KeyCode JumpKey = KeyCode.Space;
 
+    [Header("Climb / Wall Stick Settings")]
+    public KeyCode ClimbKey = KeyCode.E;
+    public float wallCheckDistance = 0.7f;
+    [Tooltip("Time in seconds the player can hang before falling")]
+    public float maxStickTime = 5f;
+    private bool isWallSticking;
+    private float stickTimer;
+    private Vector3 wallNormal;
+
     [Header("Stamina Setting & UI")]
     public Slider staminaSlider;
     public Image staminaFillImage;
@@ -97,6 +106,7 @@ public class PlayerMovement : MonoBehaviour
         HandleGroundCheckAndFriction();
         MyInput();
         HandleStamina();
+        HandleWallStickTimer();
         SpeedController();
         UpdateVelocityUI();
 
@@ -104,13 +114,22 @@ public class PlayerMovement : MonoBehaviour
 
     private void FixedUpdate()
     {
-        MovePlayer();
-        ApplyCustomGravity();
-
-        if (hozInput == 0 && verInput == 0 && grounded)
+        if (!isWallSticking)
         {
-            DeceleratePlayer();
+            MovePlayer();
+            ApplyCustomGravity();
+
+            if (hozInput == 0 && verInput == 0 && grounded)
+            {
+                DeceleratePlayer();
+            }
         }
+        else
+        {
+            // Completely freeze position when sticking 
+            rb.velocity = Vector3.zero;
+        }
+
     }
 
     private void HandleGroundCheckAndFriction()
@@ -124,6 +143,8 @@ public class PlayerMovement : MonoBehaviour
         if (grounded)
         {
             Debug.DrawRay(transform.position, Vector3.down * (castDistance + sphereRadius), Color.green);
+
+            if (isWallSticking) EndWallStick();
 
             float surfaceMultiplier = hit.collider.CompareTag("Ice") ? 1.3f : 1.0f;
             // Set the absolute peak ceiling target based on state
@@ -166,12 +187,91 @@ public class PlayerMovement : MonoBehaviour
             isSprinting = false;
         }
 
+        // Toggle Climb/Wall stick 
+        if (Input.GetKeyDown(ClimbKey))
+        {
+            if (isWallSticking)
+            {
+                EndWallStick();
+            }
+            else if (!grounded && CheckForWall(out wallNormal))
+            {
+                StartWallStick();
+            }
+        }
+
         if (Input.GetKeyDown(JumpKey) && ableToJump && grounded)
         {
-            ableToJump = false;
-            Jump();
-            Invoke(nameof(ResetJump), jumpCoolDown);
+            if (grounded)
+            {
+                ableToJump = false;
+                Jump();
+                Invoke(nameof(ResetJump), jumpCoolDown);
+            }
+            else if (isWallSticking)
+            {
+                ableToJump = false;
+                WallJump();
+                Invoke(nameof(ResetJump), jumpCoolDown);
+            }
         }
+    }
+
+    private bool CheckForWall(out Vector3 hitNormal)
+    {
+        hitNormal = Vector3.zero;
+        RaycastHit hit;
+
+        // Radial check setup: Fires rays Forward, Backward, Left, and Right from the player center
+        Vector3[] checkDirections = { orient.forward, -orient.forward, orient.right, -orient.right };
+
+        foreach (Vector3 dir in checkDirections)
+        {
+            Debug.DrawRay(transform.position, dir * wallCheckDistance, Color.cyan);
+            if (Physics.Raycast(transform.position, dir, out hit, wallCheckDistance))
+            {
+                if (hit.collider.CompareTag("Climbable"))
+                {
+                    hitNormal = hit.normal; 
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    private void StartWallStick()
+    {
+        isWallSticking = true;
+        stickTimer = maxStickTime;
+        rb.isKinematic = false;
+        rb.velocity = Vector3.zero; 
+    }
+
+    private void EndWallStick()
+    {
+        isWallSticking = false;
+    }
+
+    private void HandleWallStickTimer()
+    {
+        if (!isWallSticking) return;
+
+        stickTimer -= Time.deltaTime;
+        if (stickTimer <= 0f)
+        {
+            EndWallStick(); // Fall down automatically after 5 minutes
+        }
+    }
+
+    private void WallJump()
+    {
+        EndWallStick();
+
+        // Combines an upward blast with an outward push pointing away from the wall surface
+        Vector3 forceDirection = transform.up + wallNormal;
+        rb.velocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
+
+        rb.AddForce(forceDirection.normalized * jumpForce, ForceMode.Impulse);
     }
 
     private void HandleStamina()
