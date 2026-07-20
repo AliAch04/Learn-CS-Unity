@@ -6,9 +6,13 @@ using UnityEngine.Animations;
 public class PlayerMovement : MonoBehaviour
 {
     [Header("Movement")]
-    public float moveSpeed = 8f;
+    public float baseMoveSpeed = 8f;
+    private float currentMoveSpeed;
     public Transform orient;
-    public float groundDrag = 5f;
+
+    [Header("Drag Control")]
+    public float normalGroundDrag = 1f;
+    public float iceGroundDrag = 0.5f;
 
     [Header("Check Ground")]
     public float playerHeight = 2;
@@ -33,25 +37,15 @@ public class PlayerMovement : MonoBehaviour
     {
         rb = GetComponent<Rigidbody>();
         rb.freezeRotation = true;
-
         ableToJump = true;
         rb.useGravity = false;
+
+        currentMoveSpeed = baseMoveSpeed;
     }
 
     private void Update()
     {
-        // Sweeps a sphere downward to perfectly match the rounded bottom of a capsule
-        float sphereRadius = 0.4f; 
-        float castDistance = (playerHeight * 0.5f) - sphereRadius + 0.2f;
-
-        grounded = Physics.SphereCast(transform.position, sphereRadius, Vector3.down, out _, castDistance, whatIsGound);
-
-        Debug.DrawRay(transform.position, Vector3.down * (castDistance + sphereRadius), grounded ? Color.green : Color.red);
-
-        // Apply the drag
-        if (grounded) rb.drag = groundDrag;
-        else rb.drag = 0.5f;
-
+        HandleGroundCheckAndFriction();
         MyInput();
         SpeedController();
 
@@ -63,6 +57,44 @@ public class PlayerMovement : MonoBehaviour
         ApplyCustomGravity();
     }
 
+    private void HandleGroundCheckAndFriction()
+    {
+        float sphereRadius = 0.4f;
+        float castDistance = (playerHeight * 0.5f) - sphereRadius + 0.2f;
+
+        RaycastHit hit;
+        grounded = Physics.SphereCast(transform.position, sphereRadius, Vector3.down, out hit, castDistance, whatIsGound);
+
+        if (grounded)
+        {
+            Debug.DrawRay(transform.position, Vector3.down * (castDistance + sphereRadius), Color.green);
+
+            // OPTION A: Check using Unity Tags (tags : "Ice" or "Mud" ...)
+            if (hit.collider.CompareTag("Ice"))
+            {
+                rb.drag = iceGroundDrag; // Slidiness effect
+                currentMoveSpeed = baseMoveSpeed * 1.1f; // move faster on ice
+            }
+            // OPTION B: Check using Physics Material to managing it via assets
+            else if (hit.collider.sharedMaterial != null && hit.collider.sharedMaterial.name == "IceMaterial")
+            {
+                rb.drag = iceGroundDrag;
+            }
+            else
+            {
+                // Normal surface: high drag acts like artificial brakes when you stop pressing keys
+                rb.drag = normalGroundDrag;
+                currentMoveSpeed = baseMoveSpeed;
+            }
+        }
+        else
+        {
+            // Air state
+            Debug.DrawRay(transform.position, Vector3.down * (castDistance + sphereRadius), Color.red);
+            rb.drag = 0.5f;
+        }
+
+    }
     private void MyInput()
     {
         hozInput = Input.GetAxisRaw("Horizontal");
@@ -84,12 +116,12 @@ public class PlayerMovement : MonoBehaviour
 
         // On ground
         if (grounded)
-            rb.AddForce(direction.normalized * moveSpeed * 10f, ForceMode.Force);
+            rb.AddForce(direction.normalized * currentMoveSpeed * 10f, ForceMode.Force);
 
         // In Air
-        else if (!grounded)
+        else
         {
-            rb.AddForce(direction.normalized * moveSpeed * 10f * airMultiplier, ForceMode.Force);
+            rb.AddForce(direction.normalized * currentMoveSpeed * 10f * airMultiplier, ForceMode.Force);
         }
 
     }
@@ -113,9 +145,16 @@ public class PlayerMovement : MonoBehaviour
         Vector3 flatVeclocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
         //Debug.Log(flatVeclocity.magnitude);
 
-        if(flatVeclocity.magnitude > moveSpeed)
+        // apply an extra instant braking If player releases controls on normal ground
+        if (hozInput == 0 && verInput == 0 && grounded && rb.drag == normalGroundDrag)
         {
-            Vector3 limitedSpeed = flatVeclocity.normalized * moveSpeed;
+            rb.velocity = new Vector3(0f, rb.velocity.y, 0f);
+            return;
+        }
+
+        if (flatVeclocity.magnitude > currentMoveSpeed)
+        {
+            Vector3 limitedSpeed = flatVeclocity.normalized * currentMoveSpeed;
             rb.velocity = new Vector3(limitedSpeed.x, rb.velocity.y, limitedSpeed.z);
         }
     }
