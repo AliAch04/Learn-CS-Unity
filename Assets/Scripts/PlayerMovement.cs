@@ -46,7 +46,14 @@ public class PlayerMovement : MonoBehaviour
     bool ableToJump;
     public KeyCode JumpKey = KeyCode.Space;
 
-    [Header("Stamina Settings")]
+    [Header("Stamina Setting & UI")]
+    public Slider staminaSlider;
+    public Image staminaFillImage;
+    public Color normalStaminaColor = Color.white;
+    public Color lowStaminaColor = Color.red;
+    [Tooltip("How fast the color changes to red. Higher = faster flash.")]
+    public float colorTransitionSpeed = 5f;
+    private Color targetColor;
     public float maxStamina = 100f;
     public float staminaDrainRate = 25f; // Drains completely in 4 seconds
     public float staminaRegenRate = 15f;
@@ -55,7 +62,6 @@ public class PlayerMovement : MonoBehaviour
 
     [Header("UI Display")]
     public TextMeshProUGUI velocityText;
-    public Slider staminaSlider;
 
     float hozInput;
     float verInput;
@@ -78,6 +84,11 @@ public class PlayerMovement : MonoBehaviour
         {
             staminaSlider.maxValue = maxStamina;
             staminaSlider.value = maxStamina;
+        }
+
+        if (staminaFillImage != null)
+        {
+            staminaFillImage.color = normalStaminaColor;
         }
     }
 
@@ -168,9 +179,6 @@ public class PlayerMovement : MonoBehaviour
         if (staminaSlider != null)
         {
             staminaSlider.value = currentStamina;
-
-            // TEMPORARY TESTING LINE: Check your Console window to see if this number counts down!
-            //Debug.Log($"Current Script Stamina: {currentStamina} / Slider Value: {staminaSlider.value}");
         }
 
         if (isSprinting)
@@ -196,6 +204,25 @@ public class PlayerMovement : MonoBehaviour
             {
                 isExhausted = false;
             }
+        }
+
+        if (currentStamina <= (maxStamina * 0.2f))
+        {
+            targetColor = lowStaminaColor;
+        }
+        else
+        {
+            targetColor = normalStaminaColor;
+        }
+        // Smoothly glide the color of the stamina slider
+        if (staminaFillImage != null)
+        {
+            staminaFillImage.color = Color.Lerp(staminaFillImage.color, targetColor, colorTransitionSpeed * Time.deltaTime);
+        }
+
+        if (staminaSlider != null)
+        {
+            staminaSlider.value = currentStamina;
         }
     }
 
