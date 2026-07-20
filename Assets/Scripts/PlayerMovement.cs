@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
 using UnityEngine.Animations;
+using UnityEngine.UI;
 
 public class PlayerMovement : MonoBehaviour
 {
@@ -45,8 +46,16 @@ public class PlayerMovement : MonoBehaviour
     bool ableToJump;
     public KeyCode JumpKey = KeyCode.Space;
 
+    [Header("Stamina Settings")]
+    public float maxStamina = 100f;
+    public float staminaDrainRate = 25f; // Drains completely in 4 seconds
+    public float staminaRegenRate = 15f;
+    private float currentStamina;
+    private bool isExhausted;
+
     [Header("UI Display")]
     public TextMeshProUGUI velocityText;
+    public Slider staminaSlider;
 
     float hozInput;
     float verInput;
@@ -63,12 +72,20 @@ public class PlayerMovement : MonoBehaviour
 
         targetMoveSpeed = baseMoveSpeed;
         currentMaxSpeed = baseMoveSpeed;
+
+        currentStamina = maxStamina;
+        if (staminaSlider != null)
+        {
+            staminaSlider.maxValue = maxStamina;
+            staminaSlider.value = maxStamina;
+        }
     }
 
     private void Update()
     {
         HandleGroundCheckAndFriction();
         MyInput();
+        HandleStamina();
         SpeedController();
         UpdateVelocityUI();
 
@@ -129,7 +146,7 @@ public class PlayerMovement : MonoBehaviour
 
         bool isMovingStraight = (hozInput != 0 && verInput == 0) || (verInput != 0 && hozInput == 0);
 
-        if (Input.GetKey(SprintKey) && isMovingStraight && grounded)
+        if (Input.GetKey(SprintKey) && isMovingStraight && grounded && !isExhausted)
         {
             isSprinting = true;
         }
@@ -143,6 +160,42 @@ public class PlayerMovement : MonoBehaviour
             ableToJump = false;
             Jump();
             Invoke(nameof(ResetJump), jumpCoolDown);
+        }
+    }
+
+    private void HandleStamina()
+    {
+        if (staminaSlider != null)
+        {
+            staminaSlider.value = currentStamina;
+
+            // TEMPORARY TESTING LINE: Check your Console window to see if this number counts down!
+            //Debug.Log($"Current Script Stamina: {currentStamina} / Slider Value: {staminaSlider.value}");
+        }
+
+        if (isSprinting)
+        {
+            // Drain stamina over real time
+            currentStamina -= staminaDrainRate * Time.deltaTime;
+
+            if (currentStamina <= 0f)
+            {
+                currentStamina = 0f;
+                isSprinting = false;
+                isExhausted = true;
+            }
+        }
+        else
+        {
+            // Regenerate stamina where we not sprinting
+            currentStamina += staminaRegenRate * Time.deltaTime;
+            if (currentStamina > maxStamina) currentStamina = maxStamina;
+
+            // Stop exhaustion once player recovers up to 20% stamina
+            if (isExhausted && currentStamina >= (maxStamina * 0.2f))
+            {
+                isExhausted = false;
+            }
         }
     }
 
