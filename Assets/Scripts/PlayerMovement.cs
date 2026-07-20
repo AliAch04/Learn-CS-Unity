@@ -1,18 +1,32 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using TMPro;
 using UnityEngine.Animations;
 
 public class PlayerMovement : MonoBehaviour
 {
     [Header("Movement")]
     public float baseMoveSpeed = 8f;
+    private float targetMoveSpeed;
     private float currentMoveSpeed;
     public Transform orient;
 
-    [Header("Drag Control")]
-    public float normalGroundDrag = 1f;
-    public float iceGroundDrag = 0.5f;
+    [Header("Acceleration Settings")]
+    public float normalAcceleration = 5f;
+    public float iceAcceleration = 2f;
+    private float currentAcceleration;
+
+    [Header("Friction & Braking")]
+    public float normalGroundDrag = 0f;
+    public float iceGroundDrag = 0f;
+
+    [Header("Smooth Stop Settings")]
+    [Tooltip("Higher numbers = stops faster. Lower numbers = slides further")]
+    public float normalBrakingSpeed = 15f;  
+    public float iceBrakingSpeed = 6f;
+    private float currentBrakingSpeed;
 
     [Header("Check Ground")]
     public float playerHeight = 2;
@@ -23,9 +37,12 @@ public class PlayerMovement : MonoBehaviour
     public float jumpForce = 13f;
     public float jumpCoolDown = 0.25f;
     public float gravityMultiplier = 2.5f;
-    public float airMultiplier = 0.1f;
+    [Range(0f, 1f)] public float airMultiplier = 0.1f;
     bool ableToJump;
     public KeyCode JumpKey = KeyCode.Space;
+
+    [Header("UI Display")]
+    public TextMeshProUGUI velocityText;
 
     float hozInput;
     float verInput;
@@ -40,7 +57,7 @@ public class PlayerMovement : MonoBehaviour
         ableToJump = true;
         rb.useGravity = false;
 
-        currentMoveSpeed = baseMoveSpeed;
+        targetMoveSpeed = baseMoveSpeed;
     }
 
     private void Update()
@@ -48,6 +65,7 @@ public class PlayerMovement : MonoBehaviour
         HandleGroundCheckAndFriction();
         MyInput();
         SpeedController();
+        UpdateVelocityUI();
 
     }
 
@@ -55,6 +73,11 @@ public class PlayerMovement : MonoBehaviour
     {
         MovePlayer();
         ApplyCustomGravity();
+
+        if (hozInput == 0 && verInput == 0 && grounded)
+        {
+            DeceleratePlayer();
+        }
     }
 
     private void HandleGroundCheckAndFriction()
@@ -69,28 +92,32 @@ public class PlayerMovement : MonoBehaviour
         {
             Debug.DrawRay(transform.position, Vector3.down * (castDistance + sphereRadius), Color.green);
 
-            // OPTION A: Check using Unity Tags (tags : "Ice" or "Mud" ...)
+            // Check using Unity Tags 
             if (hit.collider.CompareTag("Ice"))
             {
                 rb.drag = iceGroundDrag; // Slidiness effect
-                currentMoveSpeed = baseMoveSpeed * 1.1f; // move faster on ice
+                currentMoveSpeed = baseMoveSpeed * 1.2f; // move faster on ice
+                currentBrakingSpeed = iceBrakingSpeed;
+                currentAcceleration = iceAcceleration;
             }
-            // OPTION B: Check using Physics Material to managing it via assets
-            else if (hit.collider.sharedMaterial != null && hit.collider.sharedMaterial.name == "IceMaterial")
-            {
-                rb.drag = iceGroundDrag;
-            }
+            //// Check using Physics Material to managing it via assets
+            //else if (hit.collider.sharedMaterial != null && hit.collider.sharedMaterial.name == "IceMaterial")
+            //{
+            //    rb.drag = iceGroundDrag;
+            //}
             else
             {
                 // Normal surface: high drag acts like artificial brakes when you stop pressing keys
                 rb.drag = normalGroundDrag;
                 currentMoveSpeed = baseMoveSpeed;
+                currentBrakingSpeed = normalBrakingSpeed;
+                currentAcceleration = normalAcceleration;
             }
         }
         else
         {
             // Air state
-            Debug.DrawRay(transform.position, Vector3.down * (castDistance + sphereRadius), Color.red);
+            //Debug.DrawRay(transform.position, Vector3.down * (castDistance + sphereRadius), Color.red);
             rb.drag = 0.5f;
         }
 
@@ -116,14 +143,26 @@ public class PlayerMovement : MonoBehaviour
 
         // On ground
         if (grounded)
-            rb.AddForce(direction.normalized * currentMoveSpeed * 10f, ForceMode.Force);
-
+        {
+            // Forces accelerate the player naturally
+            rb.AddForce(direction.normalized * targetMoveSpeed * currentAcceleration, ForceMode.Force);
+        }
         // In Air
         else
         {
             rb.AddForce(direction.normalized * currentMoveSpeed * 10f * airMultiplier, ForceMode.Force);
         }
 
+    }
+
+    private void DeceleratePlayer()
+    {
+        Vector3 horizontalVelocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
+
+        // Calculate the braking vector using standard physics deceleration
+        Vector3 smoothedVelocity = Vector3.MoveTowards(horizontalVelocity, Vector3.zero, currentBrakingSpeed * Time.fixedDeltaTime);
+
+        rb.velocity = new Vector3(smoothedVelocity.x, rb.velocity.y, smoothedVelocity.z);
     }
 
     private void ApplyCustomGravity()
@@ -145,13 +184,6 @@ public class PlayerMovement : MonoBehaviour
         Vector3 flatVeclocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
         //Debug.Log(flatVeclocity.magnitude);
 
-        // apply an extra instant braking If player releases controls on normal ground
-        if (hozInput == 0 && verInput == 0 && grounded && rb.drag == normalGroundDrag)
-        {
-            rb.velocity = new Vector3(0f, rb.velocity.y, 0f);
-            return;
-        }
-
         if (flatVeclocity.magnitude > currentMoveSpeed)
         {
             Vector3 limitedSpeed = flatVeclocity.normalized * currentMoveSpeed;
@@ -165,6 +197,19 @@ public class PlayerMovement : MonoBehaviour
         rb.velocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
         rb.AddForce(transform.up * jumpForce, ForceMode.Impulse); 
             
+    }
+
+    private void UpdateVelocityUI()
+    {
+        if (velocityText != null)
+        {
+            // Calculate horizontal speed (ignoring falling/jumping speed)
+            Vector3 flatVelocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
+            float speed = flatVelocity.magnitude;
+
+            // Formating
+            velocityText.text = "Speed: " + speed.ToString("F1") + " m/s";
+        }
     }
 
     private void ResetJump()
