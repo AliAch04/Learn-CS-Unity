@@ -9,8 +9,12 @@ public class PlayerMovement : MonoBehaviour
 {
     [Header("Movement")]
     public float baseMoveSpeed = 8f;
+    public float sprintMoveSpeed = 12f;
+    [Tooltip("How fast your target speed transitions between walking and sprinting.")]
+    public float sprintTransitionSpeed = 10f;
+    public KeyCode SprintKey = KeyCode.LeftShift;
     private float targetMoveSpeed;
-    private float currentMoveSpeed;
+    private float currentMaxSpeed;
     public Transform orient;
 
     [Header("Acceleration Settings")]
@@ -47,7 +51,7 @@ public class PlayerMovement : MonoBehaviour
     float hozInput;
     float verInput;
     Vector3 direction;
-
+    bool isSprinting;
     Rigidbody rb;
 
     private void Start()
@@ -58,6 +62,7 @@ public class PlayerMovement : MonoBehaviour
         rb.useGravity = false;
 
         targetMoveSpeed = baseMoveSpeed;
+        currentMaxSpeed = baseMoveSpeed;
     }
 
     private void Update()
@@ -92,24 +97,20 @@ public class PlayerMovement : MonoBehaviour
         {
             Debug.DrawRay(transform.position, Vector3.down * (castDistance + sphereRadius), Color.green);
 
-            // Check using Unity Tags 
+            float surfaceMultiplier = hit.collider.CompareTag("Ice") ? 1.3f : 1.0f;
+            // Set the absolute peak ceiling target based on state
+            float desiredSpeedLimit = isSprinting ? sprintMoveSpeed : baseMoveSpeed;
+            targetMoveSpeed = desiredSpeedLimit * surfaceMultiplier;
+
             if (hit.collider.CompareTag("Ice"))
             {
-                rb.drag = iceGroundDrag; // Slidiness effect
-                currentMoveSpeed = baseMoveSpeed * 1.2f; // move faster on ice
+                rb.drag = iceGroundDrag;
                 currentBrakingSpeed = iceBrakingSpeed;
                 currentAcceleration = iceAcceleration;
             }
-            //// Check using Physics Material to managing it via assets
-            //else if (hit.collider.sharedMaterial != null && hit.collider.sharedMaterial.name == "IceMaterial")
-            //{
-            //    rb.drag = iceGroundDrag;
-            //}
             else
             {
-                // Normal surface: high drag acts like artificial brakes when you stop pressing keys
                 rb.drag = normalGroundDrag;
-                currentMoveSpeed = baseMoveSpeed;
                 currentBrakingSpeed = normalBrakingSpeed;
                 currentAcceleration = normalAcceleration;
             }
@@ -117,7 +118,6 @@ public class PlayerMovement : MonoBehaviour
         else
         {
             // Air state
-            //Debug.DrawRay(transform.position, Vector3.down * (castDistance + sphereRadius), Color.red);
             rb.drag = 0.5f;
         }
 
@@ -127,11 +127,21 @@ public class PlayerMovement : MonoBehaviour
         hozInput = Input.GetAxisRaw("Horizontal");
         verInput = Input.GetAxisRaw("Vertical");
 
+        bool isMovingStraight = (hozInput != 0 && verInput == 0) || (verInput != 0 && hozInput == 0);
+
+        if (Input.GetKey(SprintKey) && isMovingStraight && grounded)
+        {
+            isSprinting = true;
+        }
+        else
+        {
+            isSprinting = false;
+        }
+
         if (Input.GetKeyDown(JumpKey) && ableToJump && grounded)
         {
             ableToJump = false;
             Jump();
-            // Call Reset function after delay (jumpCoolDown)
             Invoke(nameof(ResetJump), jumpCoolDown);
         }
     }
@@ -141,16 +151,19 @@ public class PlayerMovement : MonoBehaviour
         // Calculate the vector direction
         direction = orient.right * hozInput + orient.forward * verInput;
 
+        currentMaxSpeed = Mathf.MoveTowards(currentMaxSpeed, targetMoveSpeed, sprintTransitionSpeed * Time.fixedDeltaTime);
+
+
         // On ground
         if (grounded)
         {
             // Forces accelerate the player naturally
-            rb.AddForce(direction.normalized * targetMoveSpeed * currentAcceleration, ForceMode.Force);
+            rb.AddForce(direction.normalized * currentMaxSpeed * currentAcceleration, ForceMode.Force);
         }
         // In Air
         else
         {
-            rb.AddForce(direction.normalized * currentMoveSpeed * 10f * airMultiplier, ForceMode.Force);
+            rb.AddForce(direction.normalized * currentMaxSpeed * 10f * airMultiplier, ForceMode.Force);
         }
 
     }
@@ -184,9 +197,9 @@ public class PlayerMovement : MonoBehaviour
         Vector3 flatVeclocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
         //Debug.Log(flatVeclocity.magnitude);
 
-        if (flatVeclocity.magnitude > currentMoveSpeed)
+        if (flatVeclocity.magnitude > currentMaxSpeed)
         {
-            Vector3 limitedSpeed = flatVeclocity.normalized * currentMoveSpeed;
+            Vector3 limitedSpeed = flatVeclocity.normalized * currentMaxSpeed;
             rb.velocity = new Vector3(limitedSpeed.x, rb.velocity.y, limitedSpeed.z);
         }
     }
