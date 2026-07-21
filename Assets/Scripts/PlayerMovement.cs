@@ -56,13 +56,19 @@ public class PlayerMovement : MonoBehaviour
     private Vector3 wallNormal;
     private bool isTouchingClimbableWall;
 
+    [Header("Wall Timer UI")]
+    public Slider wallTimerSlider; 
+    public Image wallTimerFillImage; 
+    public Color normalTimerColor = Color.white;
+    public Color lowTimerColor = Color.red;
+    public float colorTransitionSpeed = 5f;
+    private Color targetTimerColor;
+
     [Header("Stamina Setting & UI")]
     public Slider staminaSlider;
     public Image staminaFillImage;
     public Color normalStaminaColor = Color.white;
     public Color lowStaminaColor = Color.red;
-    [Tooltip("How fast the color changes to red. Higher = faster flash.")]
-    public float colorTransitionSpeed = 5f;
     private Color targetColor;
     public float maxStamina = 100f;
     public float staminaDrainRate = 25f; // Drains completely in 4 seconds
@@ -100,6 +106,13 @@ public class PlayerMovement : MonoBehaviour
         {
             staminaFillImage.color = normalStaminaColor;
         }
+
+        if (wallTimerSlider != null)
+        {
+            wallTimerSlider.maxValue = maxStickTime;
+            wallTimerSlider.value = maxStickTime;
+            wallTimerSlider.gameObject.SetActive(false);
+        }
     }
 
     private void Update()
@@ -110,7 +123,6 @@ public class PlayerMovement : MonoBehaviour
         HandleWallStickTimer();
         SpeedController();
         UpdateVelocityUI();
-
     }
 
     private void FixedUpdate()
@@ -234,6 +246,7 @@ public class PlayerMovement : MonoBehaviour
         // Continuously refresh the wall surface angle in case the player slides around a curved wall
         if (collision.gameObject.CompareTag("Climbable"))
         {
+            isTouchingClimbableWall = true;
             ContactPoint contact = collision.contacts[0];
             wallNormal = contact.normal;
         }
@@ -244,8 +257,6 @@ public class PlayerMovement : MonoBehaviour
         if (collision.gameObject.CompareTag("Climbable"))
         {
             isTouchingClimbableWall = false;
-            // If the player manually slips off or falls past the edge, cancel the stick state safely
-            if (isWallSticking) EndWallStick();
         }
     }
 
@@ -255,11 +266,26 @@ public class PlayerMovement : MonoBehaviour
         stickTimer = maxStickTime;
         rb.isKinematic = false;
         rb.velocity = Vector3.zero;
+
+        if (wallTimerSlider != null)
+        {
+            wallTimerSlider.gameObject.SetActive(true);
+            wallTimerSlider.value = maxStickTime;
+        }
+        if (wallTimerFillImage != null)
+        {
+            wallTimerFillImage.color = normalTimerColor;
+        }
     }
 
     private void EndWallStick()
     {
         isWallSticking = false;
+
+        if (wallTimerSlider != null)
+        {
+            wallTimerSlider.gameObject.SetActive(false);
+        }
     }
 
     private void HandleWallStickTimer()
@@ -267,6 +293,26 @@ public class PlayerMovement : MonoBehaviour
         if (!isWallSticking) return;
 
         stickTimer -= Time.deltaTime;
+
+        if (wallTimerSlider != null)
+        {
+            wallTimerSlider.value = stickTimer;
+        }
+
+        if (stickTimer <= (maxStickTime * 0.5f))
+        {
+            targetTimerColor = lowTimerColor;
+        }
+        else
+        {
+            targetTimerColor = normalTimerColor;
+        }
+
+        if (wallTimerFillImage != null)
+        {
+            wallTimerFillImage.color = Color.Lerp(wallTimerFillImage.color, targetTimerColor, colorTransitionSpeed * Time.deltaTime);
+        }
+
         if (stickTimer <= 0f)
         {
             EndWallStick();
