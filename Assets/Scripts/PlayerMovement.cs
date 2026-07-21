@@ -29,7 +29,7 @@ public class PlayerMovement : MonoBehaviour
 
     [Header("Smooth Stop Settings")]
     [Tooltip("Higher numbers = stops faster. Lower numbers = slides further")]
-    public float normalBrakingSpeed = 15f;  
+    public float normalBrakingSpeed = 15f;
     public float iceBrakingSpeed = 6f;
     private float currentBrakingSpeed;
 
@@ -47,13 +47,14 @@ public class PlayerMovement : MonoBehaviour
     public KeyCode JumpKey = KeyCode.Space;
 
     [Header("Climb / Wall Stick Settings")]
-    public KeyCode ClimbKey = KeyCode.E;
-    public float wallCheckDistance = 0.7f;
+    public KeyCode ClimbKey = KeyCode.Mouse0;
+    public float wallCheckDistance = 1f;
     [Tooltip("Time in seconds the player can hang before falling")]
     public float maxStickTime = 5f;
     private bool isWallSticking;
     private float stickTimer;
     private Vector3 wallNormal;
+    private bool isTouchingClimbableWall;
 
     [Header("Stamina Setting & UI")]
     public Slider staminaSlider;
@@ -194,13 +195,13 @@ public class PlayerMovement : MonoBehaviour
             {
                 EndWallStick();
             }
-            else if (!grounded && CheckForWall(out wallNormal))
+            else if (!grounded && isTouchingClimbableWall)
             {
                 StartWallStick();
             }
         }
 
-        if (Input.GetKeyDown(JumpKey) && ableToJump && grounded)
+        if (Input.GetKeyDown(JumpKey) && ableToJump)
         {
             if (grounded)
             {
@@ -211,40 +212,49 @@ public class PlayerMovement : MonoBehaviour
             else if (isWallSticking)
             {
                 ableToJump = false;
+                EndWallStick();
                 WallJump();
                 Invoke(nameof(ResetJump), jumpCoolDown);
             }
         }
     }
-
-    private bool CheckForWall(out Vector3 hitNormal)
+    private void OnCollisionEnter(Collision collision)
     {
-        hitNormal = Vector3.zero;
-        RaycastHit hit;
-
-        // Radial check setup: Fires rays Forward, Backward, Left, and Right from the player center
-        Vector3[] checkDirections = { orient.forward, -orient.forward, orient.right, -orient.right };
-
-        foreach (Vector3 dir in checkDirections)
+        if (collision.gameObject.CompareTag("Climbable"))
         {
-            Debug.DrawRay(transform.position, dir * wallCheckDistance, Color.cyan);
-            if (Physics.Raycast(transform.position, dir, out hit, wallCheckDistance))
-            {
-                if (hit.collider.CompareTag("Climbable"))
-                {
-                    hitNormal = hit.normal; 
-                    return true;
-                }
-            }
+            isTouchingClimbableWall = true;
+
+            // Get the direction the wall surface is facing
+            ContactPoint contact = collision.contacts[0];
+            wallNormal = contact.normal;
         }
-        return false;
     }
+    private void OnCollisionStay(Collision collision)
+    {
+        // Continuously refresh the wall surface angle in case the player slides around a curved wall
+        if (collision.gameObject.CompareTag("Climbable"))
+        {
+            ContactPoint contact = collision.contacts[0];
+            wallNormal = contact.normal;
+        }
+    }
+
+    private void OnCollisionExit(Collision collision)
+    {
+        if (collision.gameObject.CompareTag("Climbable"))
+        {
+            isTouchingClimbableWall = false;
+            // If the player manually slips off or falls past the edge, cancel the stick state safely
+            if (isWallSticking) EndWallStick();
+        }
+    }
+
     private void StartWallStick()
     {
         isWallSticking = true;
         stickTimer = maxStickTime;
         rb.isKinematic = false;
-        rb.velocity = Vector3.zero; 
+        rb.velocity = Vector3.zero;
     }
 
     private void EndWallStick()
@@ -259,7 +269,7 @@ public class PlayerMovement : MonoBehaviour
         stickTimer -= Time.deltaTime;
         if (stickTimer <= 0f)
         {
-            EndWallStick(); // Fall down automatically after 5 minutes
+            EndWallStick();
         }
     }
 
@@ -267,8 +277,8 @@ public class PlayerMovement : MonoBehaviour
     {
         EndWallStick();
 
-        // Combines an upward blast with an outward push pointing away from the wall surface
-        Vector3 forceDirection = transform.up + wallNormal;
+        // Combines an upward blast with an small outward push pointing away from the wall surface
+        Vector3 forceDirection = transform.up + (wallNormal * 0.1f);
         rb.velocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
 
         rb.AddForce(forceDirection.normalized * jumpForce, ForceMode.Impulse);
@@ -375,7 +385,6 @@ public class PlayerMovement : MonoBehaviour
     private void SpeedController()
     {
         Vector3 flatVeclocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
-        //Debug.Log(flatVeclocity.magnitude);
 
         if (flatVeclocity.magnitude > currentMaxSpeed)
         {
@@ -388,8 +397,8 @@ public class PlayerMovement : MonoBehaviour
     {
         // Reset the y velocity
         rb.velocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
-        rb.AddForce(transform.up * jumpForce, ForceMode.Impulse); 
-            
+        rb.AddForce(transform.up * jumpForce, ForceMode.Impulse);
+
     }
 
     private void UpdateVelocityUI()
