@@ -48,17 +48,27 @@ public class PlayerMovement : MonoBehaviour
 
     [Header("Climb / Wall Stick Settings")]
     public KeyCode ClimbKey = KeyCode.Mouse0;
-    public float wallCheckDistance = 1f;
+    [Tooltip("Distance from camera view to detect climbable wall. Increased for magnetic dash.")]
+    public float wallCheckDistance = 1.5f;
+    [Tooltip("How wide the detection 'tube' is. Higher = easier to detect the wall without looking directly at it.")]
+    public float wallCheckRadius = 1.0f;
     [Tooltip("Time in seconds the player can hang before falling")]
     public float maxStickTime = 5f;
     private bool isWallSticking;
+    private bool isLeapingToWall;
     private float stickTimer;
     private Vector3 wallNormal;
+    private Vector3 wallHitPoint;
     private bool isTouchingClimbableWall;
 
+    [Header("Climb Prompt UI")]
+    [Tooltip("Assign your UI Panel (positioned at the center of your screen Canvas)")]
+    public GameObject climbPromptUI;
+    private Camera mainCamera;
+
     [Header("Wall Timer UI")]
-    public Slider wallTimerSlider; 
-    public Image wallTimerFillImage; 
+    public Slider wallTimerSlider;
+    public Image wallTimerFillImage;
     public Color normalTimerColor = Color.white;
     public Color lowTimerColor = Color.red;
     public float colorTransitionSpeed = 5f;
@@ -71,7 +81,7 @@ public class PlayerMovement : MonoBehaviour
     public Color lowStaminaColor = Color.red;
     private Color targetColor;
     public float maxStamina = 100f;
-    public float staminaDrainRate = 25f; // Drains completely in 4 seconds
+    public float staminaDrainRate = 25f;
     public float staminaRegenRate = 15f;
     private float currentStamina;
     private bool isExhausted;
@@ -91,6 +101,8 @@ public class PlayerMovement : MonoBehaviour
         rb.freezeRotation = true;
         ableToJump = true;
         rb.useGravity = false;
+
+        mainCamera = Camera.main;
 
         targetMoveSpeed = baseMoveSpeed;
         currentMaxSpeed = baseMoveSpeed;
@@ -113,21 +125,29 @@ public class PlayerMovement : MonoBehaviour
             wallTimerSlider.value = maxStickTime;
             wallTimerSlider.gameObject.SetActive(false);
         }
+
+        if (climbPromptUI != null)
+        {
+            climbPromptUI.SetActive(false);
+        }
     }
 
     private void Update()
     {
         HandleGroundCheckAndFriction();
+        CheckClimbableWall();
         MyInput();
         HandleStamina();
         HandleWallStickTimer();
+        HandleClimbPromptUI();
         SpeedController();
         UpdateVelocityUI();
     }
 
     private void FixedUpdate()
     {
-        if (!isWallSticking)
+        // Only apply normal physics if we are not sticking and not currently dashing to the wall
+        if (!isWallSticking && !isLeapingToWall)
         {
             MovePlayer();
             ApplyCustomGravity();
@@ -137,12 +157,44 @@ public class PlayerMovement : MonoBehaviour
                 DeceleratePlayer();
             }
         }
-        else
+        else if (isWallSticking)
         {
             // Completely freeze position when sticking 
             rb.velocity = Vector3.zero;
         }
+    }
 
+    private void CheckClimbableWall()
+    {
+        if (mainCamera == null) mainCamera = Camera.main;
+
+        Vector3 rayOrigin = mainCamera != null ? mainCamera.transform.position : transform.position + Vector3.up;
+        Vector3 rayDirection = mainCamera != null ? mainCamera.transform.forward : orient.forward;
+
+        if (Physics.SphereCast(rayOrigin, wallCheckRadius, rayDirection, out RaycastHit hit, wallCheckDistance))
+        {
+            if (hit.collider.CompareTag("Climbable"))
+            {
+                isTouchingClimbableWall = true;
+                wallNormal = hit.normal;
+                wallHitPoint = hit.point;
+                return;
+            }
+        }
+
+        isTouchingClimbableWall = false;
+    }
+
+    private void HandleClimbPromptUI()
+    {
+        if (climbPromptUI == null) return;
+
+        bool showPrompt = !grounded && isTouchingClimbableWall && !isWallSticking && !isLeapingToWall;
+
+        if (climbPromptUI.activeSelf != showPrompt)
+        {
+            climbPromptUI.SetActive(showPrompt);
+        }
     }
 
     private void HandleGroundCheckAndFriction()
@@ -155,12 +207,9 @@ public class PlayerMovement : MonoBehaviour
 
         if (grounded)
         {
-            Debug.DrawRay(transform.position, Vector3.down * (castDistance + sphereRadius), Color.green);
-
             if (isWallSticking) EndWallStick();
 
             float surfaceMultiplier = hit.collider.CompareTag("Ice") ? 1.3f : 1.0f;
-            // Set the absolute peak ceiling target based on state
             float desiredSpeedLimit = isSprinting ? sprintMoveSpeed : baseMoveSpeed;
             targetMoveSpeed = desiredSpeedLimit * surfaceMultiplier;
 
@@ -179,11 +228,10 @@ public class PlayerMovement : MonoBehaviour
         }
         else
         {
-            // Air state
             rb.drag = 0.5f;
         }
-
     }
+
     private void MyInput()
     {
         hozInput = Input.GetAxisRaw("Horizontal");
@@ -207,13 +255,14 @@ public class PlayerMovement : MonoBehaviour
             {
                 EndWallStick();
             }
-            else if (!grounded && isTouchingClimbableWall)
+            else if (!grounded && isTouchingClimbableWall && !isLeapingToWall)
             {
-                StartWallStick();
+                // Perform the magnetic leap to the wall
+                StartCoroutine(LeapToWallRoutine(wallHitPoint, wallNormal));
             }
         }
 
-        if (Input.GetKeyDown(JumpKey) && ableToJump)
+        if (Input.GetKeyDown(JumpKey) && ableToJump && !isLeapingToWall)
         {
             if (grounded)
             {
@@ -230,34 +279,35 @@ public class PlayerMovement : MonoBehaviour
             }
         }
     }
-    private void OnCollisionEnter(Collision collision)
-    {
-        if (collision.gameObject.CompareTag("Climbable"))
-        {
-            isTouchingClimbableWall = true;
 
-            // Get the direction the wall surface is facing
-            ContactPoint contact = collision.contacts[0];
-            wallNormal = contact.normal;
-        }
-    }
-    private void OnCollisionStay(Collision collision)
+    private IEnumerator LeapToWallRoutine(Vector3 hitPoint, Vector3 normal)
     {
-        // Continuously refresh the wall surface angle in case the player slides around a curved wall
-        if (collision.gameObject.CompareTag("Climbable"))
-        {
-            isTouchingClimbableWall = true;
-            ContactPoint contact = collision.contacts[0];
-            wallNormal = contact.normal;
-        }
-    }
+        isLeapingToWall = true;
 
-    private void OnCollisionExit(Collision collision)
-    {
-        if (collision.gameObject.CompareTag("Climbable"))
+        Vector3 startPos = transform.position;
+        Vector3 targetPos = hitPoint + (normal * 0.5f);
+
+        // Grab current magnitude, but enforce a minimum speed so the player doesn't float slowly
+        float dashSpeed = Mathf.Max(rb.velocity.magnitude, baseMoveSpeed);
+        float distance = Vector3.Distance(startPos, targetPos);
+        float duration = distance / dashSpeed;
+        float elapsed = 0f;
+
+        while (elapsed < duration)
         {
-            isTouchingClimbableWall = false;
+            // Nullify physics velocity during the dash to prevent gravity falling
+            rb.velocity = Vector3.zero;
+
+            elapsed += Time.deltaTime;
+            transform.position = Vector3.Lerp(startPos, targetPos, elapsed / duration);
+            yield return null;
         }
+
+        // Snap precisely to the target at the end
+        transform.position = targetPos;
+        isLeapingToWall = false;
+
+        StartWallStick();
     }
 
     private void StartWallStick()
@@ -323,7 +373,6 @@ public class PlayerMovement : MonoBehaviour
     {
         EndWallStick();
 
-        // Combines an upward blast with an small outward push pointing away from the wall surface
         Vector3 forceDirection = transform.up + (wallNormal * 0.1f);
         rb.velocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
 
@@ -339,7 +388,6 @@ public class PlayerMovement : MonoBehaviour
 
         if (isSprinting)
         {
-            // Drain stamina over real time
             currentStamina -= staminaDrainRate * Time.deltaTime;
 
             if (currentStamina <= 0f)
@@ -351,11 +399,9 @@ public class PlayerMovement : MonoBehaviour
         }
         else
         {
-            // Regenerate stamina where we not sprinting
             currentStamina += staminaRegenRate * Time.deltaTime;
             if (currentStamina > maxStamina) currentStamina = maxStamina;
 
-            // Stop exhaustion once player recovers up to 20% stamina
             if (isExhausted && currentStamina >= (maxStamina * 0.2f))
             {
                 isExhausted = false;
@@ -370,7 +416,7 @@ public class PlayerMovement : MonoBehaviour
         {
             targetColor = normalStaminaColor;
         }
-        // Smoothly glide the color of the stamina slider
+
         if (staminaFillImage != null)
         {
             staminaFillImage.color = Color.Lerp(staminaFillImage.color, targetColor, colorTransitionSpeed * Time.deltaTime);
@@ -384,31 +430,23 @@ public class PlayerMovement : MonoBehaviour
 
     private void MovePlayer()
     {
-        // Calculate the vector direction
         direction = orient.right * hozInput + orient.forward * verInput;
 
         currentMaxSpeed = Mathf.MoveTowards(currentMaxSpeed, targetMoveSpeed, sprintTransitionSpeed * Time.fixedDeltaTime);
 
-
-        // On ground
         if (grounded)
         {
-            // Forces accelerate the player naturally
             rb.AddForce(direction.normalized * currentMaxSpeed * currentAcceleration, ForceMode.Force);
         }
-        // In Air
         else
         {
             rb.AddForce(direction.normalized * currentMaxSpeed * 10f * airMultiplier, ForceMode.Force);
         }
-
     }
 
     private void DeceleratePlayer()
     {
         Vector3 horizontalVelocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
-
-        // Calculate the braking vector using standard physics deceleration
         Vector3 smoothedVelocity = Vector3.MoveTowards(horizontalVelocity, Vector3.zero, currentBrakingSpeed * Time.fixedDeltaTime);
 
         rb.velocity = new Vector3(smoothedVelocity.x, rb.velocity.y, smoothedVelocity.z);
@@ -416,14 +454,12 @@ public class PlayerMovement : MonoBehaviour
 
     private void ApplyCustomGravity()
     {
-        // Applies a stronger realistic downward force
         if (!grounded)
         {
             rb.AddForce(Vector3.down * (9.81f * gravityMultiplier), ForceMode.Force);
         }
         else
         {
-            // Standard light gravity
             rb.AddForce(Vector3.down * 9.81f, ForceMode.Force);
         }
     }
@@ -441,21 +477,17 @@ public class PlayerMovement : MonoBehaviour
 
     private void Jump()
     {
-        // Reset the y velocity
         rb.velocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
         rb.AddForce(transform.up * jumpForce, ForceMode.Impulse);
-
     }
 
     private void UpdateVelocityUI()
     {
         if (velocityText != null)
         {
-            // Calculate horizontal speed (ignoring falling/jumping speed)
             Vector3 flatVelocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
             float speed = flatVelocity.magnitude;
 
-            // Formating
             velocityText.text = "Speed: " + speed.ToString("F1") + " m/s";
         }
     }
@@ -464,5 +496,4 @@ public class PlayerMovement : MonoBehaviour
     {
         ableToJump = true;
     }
-
 }
