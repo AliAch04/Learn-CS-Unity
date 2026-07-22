@@ -43,13 +43,16 @@ public class PlayerMovement : MonoBehaviour
     public float jumpCoolDown = 0.25f;
     public float gravityMultiplier = 2.5f;
     [Range(0f, 1f)] public float airMultiplier = 0.1f;
+    [Tooltip("How long (in seconds) the game remembers your jump press before you hit the ground.")]
+    public float jumpBufferTime = 0.25f;
     bool ableToJump;
     public KeyCode JumpKey = KeyCode.Space;
+    private float jumpInputBufferTimer;
 
     [Header("Climb / Wall Stick Settings")]
     public KeyCode ClimbKey = KeyCode.Mouse0;
     [Tooltip("Distance from chest view to detect climbable wall.")]
-    public float wallCheckDistance = 4f;
+    public float wallCheckDistance = 2.5f;
     [Tooltip("How wide the detection sphere is. Covers torso and head when centered at chest level.")]
     public float wallCheckRadius = 0.8f;
     [Tooltip("Time in seconds the player can hang before falling")]
@@ -61,7 +64,7 @@ public class PlayerMovement : MonoBehaviour
     private Vector3 wallHitPoint;
     private bool isTouchingClimbableWall;
 
-    // Input buffering window (0.25s)
+    // Input buffering window for climbing (0.25s)
     private float climbInputBufferTimer;
 
     [Header("Climb Prompt UI")]
@@ -254,7 +257,7 @@ public class PlayerMovement : MonoBehaviour
             isSprinting = false;
         }
 
-        // Input buffering
+        // --- CLIMB INPUT BUFFERING ---
         if (climbInputBufferTimer > 0)
         {
             climbInputBufferTimer -= Time.deltaTime;
@@ -278,21 +281,43 @@ public class PlayerMovement : MonoBehaviour
             StartCoroutine(LeapToWallRoutine(wallHitPoint, wallNormal));
         }
 
-        if (Input.GetKeyDown(JumpKey) && ableToJump && !isLeapingToWall)
+        // --- JUMP INPUT BUFFERING ---
+        if (jumpInputBufferTimer > 0)
         {
-            if (grounded)
+            jumpInputBufferTimer -= Time.deltaTime;
+        }
+
+        if (Input.GetKeyDown(JumpKey))
+        {
+            if (grounded && ableToJump && !isLeapingToWall)
             {
+                // Normal Ground Jump
                 ableToJump = false;
                 Jump();
                 Invoke(nameof(ResetJump), jumpCoolDown);
             }
-            else if (isWallSticking)
+            else if (isWallSticking && ableToJump && !isLeapingToWall)
             {
+                // Wall Jump
                 ableToJump = false;
                 EndWallStick();
                 WallJump();
                 Invoke(nameof(ResetJump), jumpCoolDown);
             }
+            else if (!grounded && !isWallSticking)
+            {
+                // We are mid-air. Start the buffer timer to remember the jump press.
+                jumpInputBufferTimer = jumpBufferTime;
+            }
+        }
+
+        // Check if we hit the ground while our jump memory is still active
+        if (jumpInputBufferTimer > 0 && grounded && ableToJump && !isLeapingToWall)
+        {
+            jumpInputBufferTimer = 0f; // Consume the buffer
+            ableToJump = false;
+            Jump();
+            Invoke(nameof(ResetJump), jumpCoolDown);
         }
     }
 
