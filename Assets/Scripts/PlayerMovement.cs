@@ -48,9 +48,9 @@ public class PlayerMovement : MonoBehaviour
 
     [Header("Climb / Wall Stick Settings")]
     public KeyCode ClimbKey = KeyCode.Mouse0;
-    [Tooltip("Distance from camera view to detect climbable wall. Increased for magnetic dash.")]
-    public float wallCheckDistance = 1.5f;
-    [Tooltip("How wide the detection 'tube' is. Higher = easier to detect the wall without looking directly at it.")]
+    [Tooltip("Distance from camera view to detect climbable wall. (Increased for better high-speed reaction)")]
+    public float wallCheckDistance = 2.5f;
+    [Tooltip("How wide the detection 'tube' is. Look at the Scene view to see the visual representation.")]
     public float wallCheckRadius = 1.0f;
     [Tooltip("Time in seconds the player can hang before falling")]
     public float maxStickTime = 5f;
@@ -60,6 +60,9 @@ public class PlayerMovement : MonoBehaviour
     private Vector3 wallNormal;
     private Vector3 wallHitPoint;
     private bool isTouchingClimbableWall;
+
+    // Input buffering makes the game feel responsive. Remembers your click for 0.25 seconds.
+    private float climbInputBufferTimer;
 
     [Header("Climb Prompt UI")]
     [Tooltip("Assign your UI Panel (positioned at the center of your screen Canvas)")]
@@ -171,7 +174,14 @@ public class PlayerMovement : MonoBehaviour
         Vector3 rayOrigin = mainCamera != null ? mainCamera.transform.position : transform.position + Vector3.up;
         Vector3 rayDirection = mainCamera != null ? mainCamera.transform.forward : orient.forward;
 
-        if (Physics.SphereCast(rayOrigin, wallCheckRadius, rayDirection, out RaycastHit hit, wallCheckDistance))
+        // PULLBACK: Shift the origin backward by the radius so if we are bumping directly against the wall, 
+        // the sphere doesn't spawn *inside* the wall (which makes it fail to detect).
+        rayOrigin -= rayDirection * wallCheckRadius;
+
+        // Add the pullback distance back to the check distance so the effective range remains the same
+        float actualCheckDistance = wallCheckDistance + wallCheckRadius;
+
+        if (Physics.SphereCast(rayOrigin, wallCheckRadius, rayDirection, out RaycastHit hit, actualCheckDistance))
         {
             if (hit.collider.CompareTag("Climbable"))
             {
@@ -248,20 +258,34 @@ public class PlayerMovement : MonoBehaviour
             isSprinting = false;
         }
 
-        // Toggle Climb/Wall stick 
+        // --- CLIMB INPUT BUFFERING ---
+        if (climbInputBufferTimer > 0)
+        {
+            climbInputBufferTimer -= Time.deltaTime;
+        }
+
         if (Input.GetKeyDown(ClimbKey))
         {
             if (isWallSticking)
             {
                 EndWallStick();
             }
-            else if (!grounded && isTouchingClimbableWall && !isLeapingToWall)
+            else
             {
-                // Perform the magnetic leap to the wall
-                StartCoroutine(LeapToWallRoutine(wallHitPoint, wallNormal));
+                // Give the player a 0.25 second window where their click is "remembered"
+                climbInputBufferTimer = 0.25f;
             }
         }
 
+        // If we have a buffered click, are mid-air, detect a wall, and aren't already sticking/leaping
+        if (climbInputBufferTimer > 0 && !grounded && isTouchingClimbableWall && !isLeapingToWall && !isWallSticking)
+        {
+            // Consume the buffer so we don't dash twice
+            climbInputBufferTimer = 0f;
+            StartCoroutine(LeapToWallRoutine(wallHitPoint, wallNormal));
+        }
+
+        // --- JUMP ---
         if (Input.GetKeyDown(JumpKey) && ableToJump && !isLeapingToWall)
         {
             if (grounded)
@@ -285,25 +309,23 @@ public class PlayerMovement : MonoBehaviour
         isLeapingToWall = true;
 
         Vector3 startPos = transform.position;
+        // Offset by 0.5 units away from the wall so we don't clip inside it
         Vector3 targetPos = hitPoint + (normal * 0.5f);
 
         // Grab current magnitude, but enforce a minimum speed so the player doesn't float slowly
-        float dashSpeed = Mathf.Max(rb.velocity.magnitude, baseMoveSpeed);
+        float dashSpeed = Mathf.Max(rb.velocity.magnitude, baseMoveSpeed * 1.5f);
         float distance = Vector3.Distance(startPos, targetPos);
         float duration = distance / dashSpeed;
         float elapsed = 0f;
 
         while (elapsed < duration)
         {
-            // Nullify physics velocity during the dash to prevent gravity falling
-            rb.velocity = Vector3.zero;
-
+            rb.velocity = Vector3.zero; // Prevent falling
             elapsed += Time.deltaTime;
             transform.position = Vector3.Lerp(startPos, targetPos, elapsed / duration);
             yield return null;
         }
 
-        // Snap precisely to the target at the end
         transform.position = targetPos;
         isLeapingToWall = false;
 
@@ -495,5 +517,37 @@ public class PlayerMovement : MonoBehaviour
     private void ResetJump()
     {
         ableToJump = true;
+    }
+
+    // --- VISUAL DEBUGGER ---
+    // This will draw the detection area in your Scene view so you can tune it perfectly.
+    private void OnDrawGizmos()
+    {
+        if (!Application.isPlaying) return;
+
+        Vector3 rayOrigin = mainCamera != null ? mainCamera.transform.position : transform.position + Vector3.up;
+        Vector3 rayDirection = mainCamera != null ? mainCamera.transform.forward : orient != null ? orient.forward : transform.forward;
+
+        // Represent the pullback logic
+        rayOrigin -= rayDirection * wallCheckRadius;
+        float actualCheckDistance = wallCheckDistance + wallCheckRadius;
+
+        // Turn Green if wall is detected, Red if not
+        Gizmos.color = isTouchingClimbableWall ? new Color(0, 1, 0, 0.4f) : new Color(1, 0, 0, 0.4f);
+
+        // Draw the starting sphere of the cast
+        Gizmos.DrawWireSphere(rayOrigin, wallCheckRadius);
+
+        // Draw a line representing the distance of the cast
+        Gizmos.DrawLine(rayOrigin, rayOrigin + rayDirection * actualCheckDistance);
+
+        // Draw the exact hit point on the wall in Cyan
+        if (isTouchingClimbableWall)
+        {
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawSphere(wallHitPoint, 0.15f);
+            // Draw the wall normal direction
+            Gizmos.DrawRay(wallHitPoint, wallNormal * 0.5f);
+        }
     }
 }
