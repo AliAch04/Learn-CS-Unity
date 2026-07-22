@@ -30,7 +30,7 @@ public class PlayerMovement : MonoBehaviour
     [Header("Smooth Stop Settings")]
     [Tooltip("Higher numbers = stops faster. Lower numbers = slides further")]
     public float normalBrakingSpeed = 15f;
-    public float iceBrakingSpeed = 6f;
+    public float iceBrakingSpeed = 0.5f;
     private float currentBrakingSpeed;
 
     [Header("Check Ground")]
@@ -44,7 +44,7 @@ public class PlayerMovement : MonoBehaviour
     public float gravityMultiplier = 2.5f;
     [Range(0f, 1f)] public float airMultiplier = 0.1f;
     [Tooltip("How long (in seconds) the game remembers your jump press before you hit the ground.")]
-    public float jumpBufferTime = 0.25f;
+    public float jumpBufferTime = 0.35f;
     bool ableToJump;
     public KeyCode JumpKey = KeyCode.Space;
     private float jumpInputBufferTimer;
