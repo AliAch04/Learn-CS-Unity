@@ -35,6 +35,13 @@ public class InteractionManager : MonoBehaviour
             return;
         }
 
+        // hide UI If we are holding an object
+        if (PickUpScript.instance != null && PickUpScript.instance.heldObj != null)
+        {
+            HideUI();
+            return;
+        }
+
         RaycastHit hit = default;
 
         if (Physics.Raycast(playerCam.transform.position, playerCam.transform.forward, out hit, dist))
