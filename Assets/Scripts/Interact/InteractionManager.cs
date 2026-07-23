@@ -9,7 +9,7 @@ public class InteractionManager : MonoBehaviour
     public InteractionUI ui;
 
     public Camera playerCam;
-    public float dist = 3;
+    public float dist = 5;
 
     private void Awake()
     {

@@ -2,29 +2,41 @@ using UnityEngine;
 
 public class PickUpScript : MonoBehaviour
 {
-    public static PickUpScript instance; 
+    public static PickUpScript instance;
 
     public GameObject player;
     public Transform holdPos;
+
+    [Header("Camera & Controls")]
+    [Tooltip("Drag the script that controls your mouse looking here so we can disable it while rotating objects.")]
+    public PlayerCamController cameraLookScript;
+
+    [Header("Physics Settings")]
     public float throwForce = 500f;
     public float pickUpRange = 5f;
-    public LayerMask holdLayer = LayerMask.NameToLayer("holdLayer");
-    private float rotationSensitivity = 1f;
+    public string holdLayerName = "HoldLayer";
+    private int holdLayerIndex;
 
-    public GameObject heldObj; 
+    private float rotationSensitivity = 2f;
+
+    public GameObject heldObj;
     private Rigidbody heldObjRb;
     private bool canDrop = true;
-    private int LayerNumber;
-
 
     private void Awake()
     {
-        instance = this; 
+        instance = this;
     }
 
     void Start()
     {
-        LayerNumber = holdLayer;
+        holdLayerIndex = LayerMask.NameToLayer(holdLayerName);
+
+        if (holdLayerIndex == -1)
+        {
+            Debug.LogError($"[PickUpScript] Layer '{holdLayerName}' does not exist! Defaulting to layer 0.");
+            holdLayerIndex = 0;
+        }
     }
 
     void Update()
@@ -50,23 +62,60 @@ public class PickUpScript : MonoBehaviour
 
     public void PickUpObject(GameObject pickUpObj)
     {
-        if (pickUpObj.GetComponentInChildren<Rigidbody>())
+        Rigidbody rb = pickUpObj.GetComponent<Rigidbody>();
+        if (rb == null) rb = pickUpObj.GetComponentInChildren<Rigidbody>();
+
+        if (rb != null)
         {
             heldObj = pickUpObj;
-            heldObjRb = pickUpObj.GetComponentInChildren<Rigidbody>();
+            heldObjRb = rb;
+
             heldObjRb.isKinematic = true;
-            heldObjRb.transform.parent = holdPos.transform;
-            heldObj.layer = LayerNumber;
-            Physics.IgnoreCollision(heldObj.GetComponent<Collider>(), player.GetComponent<Collider>(), true);
+            heldObj.transform.parent = holdPos.transform;
+
+            SetLayerRecursively(heldObj, holdLayerIndex);
+
+            // FIX 1: Completely disable colliders while holding to prevent ALL physics glitches
+            Collider[] colliders = heldObj.GetComponentsInChildren<Collider>();
+            foreach (Collider col in colliders)
+            {
+                col.enabled = false;
+            }
         }
     }
 
     void DropObject()
     {
-        Physics.IgnoreCollision(heldObj.GetComponent<Collider>(), player.GetComponent<Collider>(), false);
-        heldObj.layer = 0;
+        // Re-enable colliders when dropping
+        Collider[] colliders = heldObj.GetComponentsInChildren<Collider>();
+        foreach (Collider col in colliders)
+        {
+            col.enabled = true;
+        }
+
+        SetLayerRecursively(heldObj, 0);
+
         heldObjRb.isKinematic = false;
         heldObj.transform.parent = null;
+        heldObj = null;
+    }
+
+    void ThrowObject()
+    {
+        // Re-enable colliders when throwing
+        Collider[] colliders = heldObj.GetComponentsInChildren<Collider>();
+        foreach (Collider col in colliders)
+        {
+            col.enabled = true;
+        }
+
+        SetLayerRecursively(heldObj, 0);
+
+        heldObjRb.isKinematic = false;
+        heldObj.transform.parent = null;
+
+        heldObjRb.AddForce(transform.forward * throwForce);
+
         heldObj = null;
     }
 
@@ -80,36 +129,44 @@ public class PickUpScript : MonoBehaviour
         if (Input.GetKey(KeyCode.R))
         {
             canDrop = false;
+
+            // Disable the player's ability to look around
+            if (cameraLookScript != null) cameraLookScript.enabled = false;
+
             float XaxisRotation = Input.GetAxis("Mouse X") * rotationSensitivity;
             float YaxisRotation = Input.GetAxis("Mouse Y") * rotationSensitivity;
-            heldObj.transform.Rotate(Vector3.down, XaxisRotation);
-            heldObj.transform.Rotate(Vector3.right, YaxisRotation);
+
+            // FIX 2: Rotate around the exact center of the hold position, using the camera's up/right directions
+            heldObj.transform.RotateAround(holdPos.position, transform.up, -XaxisRotation);
+            heldObj.transform.RotateAround(holdPos.position, transform.right, YaxisRotation);
         }
         else
         {
             canDrop = true;
-        }
-    }
 
-    void ThrowObject()
-    {
-        Physics.IgnoreCollision(heldObj.GetComponent<Collider>(), player.GetComponent<Collider>(), false);
-        heldObj.layer = 0;
-        heldObjRb.isKinematic = false;
-        heldObj.transform.parent = null;
-        heldObjRb.AddForce(transform.forward * throwForce);
-        heldObj = null;
+            // Re-enable the player's ability to look around
+            if (cameraLookScript != null) cameraLookScript.enabled = true;
+        }
     }
 
     void StopClipping()
     {
         var clipRange = Vector3.Distance(heldObj.transform.position, transform.position);
-        RaycastHit[] hits;
-        hits = Physics.RaycastAll(transform.position, transform.TransformDirection(Vector3.forward), clipRange);
 
-        if (hits.Length > 1)
+        // Much cleaner clipping check since the object's colliders are disabled!
+        if (Physics.Raycast(transform.position, transform.forward, out RaycastHit hit, clipRange))
         {
-            heldObj.transform.position = transform.position + new Vector3(0f, -0.5f, 0f);
+            // If there's a wall between the camera and the hold point, drop it slightly in front of the wall
+            heldObj.transform.position = hit.point + (hit.normal * 0.1f);
+        }
+    }
+
+    private void SetLayerRecursively(GameObject obj, int newLayer)
+    {
+        obj.layer = newLayer;
+        foreach (Transform child in obj.transform)
+        {
+            SetLayerRecursively(child.gameObject, newLayer);
         }
     }
 }
