@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 public class PickUpScript : MonoBehaviour
@@ -23,11 +24,16 @@ public class PickUpScript : MonoBehaviour
     public CanvasGroup holdUIGroup;
     [Tooltip("Attach the Canvas Group of the Rotate UI here")]
     public CanvasGroup rotateUIGroup;
-    public float uiFadeSpeed = 8f; // How fast the UI fades in and out
+    public float uiFadeSpeed = 8f;
+
+    [Header("Animation Settings")]
+    public float pickupSpeed = 0.2f; // How fast it flies to your hand
+    public float takeSpeed = 0.3f;   // How fast it goes into your chest
 
     public GameObject heldObj;
     private Rigidbody heldObjRb;
     private bool canDrop = true;
+    private bool isAnimating = false; // Locks inputs while object is animating
     private Vector3 localCenterOffset;
     private float dropCooldown = 0f;
 
@@ -39,7 +45,6 @@ public class PickUpScript : MonoBehaviour
     {
         instance = this;
 
-        // Ensure UI is completely invisible on start
         if (holdUIGroup != null) holdUIGroup.alpha = 0f;
         if (rotateUIGroup != null) rotateUIGroup.alpha = 0f;
     }
@@ -56,16 +61,24 @@ public class PickUpScript : MonoBehaviour
 
     void Update()
     {
-        if (heldObj != null)
+        // Only allow movement, rotation, and inputs if we are NOT currently playing a pickup/take animation
+        if (heldObj != null && !isAnimating)
         {
             MoveObject();
             RotateObject();
 
-            if (Input.GetKeyDown(KeyCode.E) && canDrop == true)
+            // 1. DROP ITEM (Now on 'X')
+            if (Input.GetKeyDown(KeyCode.X) && canDrop == true)
             {
                 StopClipping();
                 DropObject();
             }
+            // 2. TAKE ITEM (Now on 'E')
+            else if (Input.GetKeyDown(KeyCode.E) && canDrop == true)
+            {
+                TakeObject();
+            }
+            // 3. THROW ITEM
             else if (Input.GetKeyDown(KeyCode.Mouse0) && canDrop == true)
             {
                 StopClipping();
@@ -121,10 +134,70 @@ public class PickUpScript : MonoBehaviour
                 col.enabled = false;
             }
 
-            // Tell Hold UI to fade in
             targetHoldAlpha = 1f;
             targetRotateAlpha = 0f;
+
+            // Start the smooth glide to our hands
+            StartCoroutine(AnimatePickup());
         }
+    }
+    private IEnumerator AnimatePickup()
+    {
+        isAnimating = true; // Lock controls
+        float timeElapsed = 0f;
+        Vector3 startPos = heldObj.transform.position;
+
+        while (timeElapsed < pickupSpeed)
+        {
+            timeElapsed += Time.deltaTime;
+            float t = timeElapsed / pickupSpeed;
+
+            // Calculate where it should be right now
+            Vector3 targetPos = holdPos.position - heldObj.transform.TransformDirection(localCenterOffset);
+
+            // Lerp from where it started on the floor, to the hold position
+            heldObj.transform.position = Vector3.Lerp(startPos, targetPos, t);
+            yield return null;
+        }
+
+        isAnimating = false; // Unlock controls
+    }
+
+    void TakeObject()
+    {
+        dropCooldown = Time.time + 0.2f;
+        StartCoroutine(AnimateTake());
+    }
+
+    private IEnumerator AnimateTake()
+    {
+        isAnimating = true; // Lock controls
+        HideAllUI();        // Hide UI immediately
+
+        float timeElapsed = 0f;
+        Vector3 startPos = heldObj.transform.position;
+        Vector3 startScale = heldObj.transform.localScale;
+
+        while (timeElapsed < takeSpeed)
+        {
+            timeElapsed += Time.deltaTime;
+            float t = timeElapsed / takeSpeed;
+
+            // Move it down and to the left of the player (relative to the hold position)
+            Vector3 targetPos = holdPos.position + holdPos.right * 0.5f - holdPos.up * 0.6f;
+
+            heldObj.transform.position = Vector3.Lerp(startPos, targetPos, t);
+
+            // Shrink it down to zero to simulate it entering a pocket/inventory (Highly optimized way to handle FOV leaving)
+            heldObj.transform.localScale = Vector3.Lerp(startScale, Vector3.zero, t);
+
+            yield return null;
+        }
+
+        // Once the animation finishes, destroy it and clear hands
+        Destroy(heldObj);
+        heldObj = null;
+        isAnimating = false;
     }
 
     void DropObject()
@@ -174,7 +247,6 @@ public class PickUpScript : MonoBehaviour
             canDrop = false;
             if (cameraLookScript != null) cameraLookScript.enabled = false;
 
-            // Trigger Rotate UI fade in, Hold UI fade out
             targetHoldAlpha = 0f;
             targetRotateAlpha = 1f;
 
@@ -189,7 +261,6 @@ public class PickUpScript : MonoBehaviour
             canDrop = true;
             if (cameraLookScript != null) cameraLookScript.enabled = true;
 
-            // Trigger Hold UI fade in, Rotate UI fade out
             targetHoldAlpha = 1f;
             targetRotateAlpha = 0f;
         }
@@ -215,7 +286,6 @@ public class PickUpScript : MonoBehaviour
 
     private void HideAllUI()
     {
-        // Target 0 alpha for both
         targetHoldAlpha = 0f;
         targetRotateAlpha = 0f;
     }
