@@ -17,27 +17,26 @@ public class PickUpScript : MonoBehaviour
     public float pickUpRange = 5f;
     public string holdLayerName = "HoldLayer";
     private int holdLayerIndex;
-    private float rotationSensitivity = 2f;
+
+    [Tooltip("How fast the object rotates with the mouse")]
+    public float rotationSensitivity = 2f;
 
     [Header("UI Panels")]
-    [Tooltip("Attach the Canvas Group of the Hold UI here")]
     public CanvasGroup holdUIGroup;
-    [Tooltip("Attach the Canvas Group of the Rotate UI here")]
     public CanvasGroup rotateUIGroup;
     public float uiFadeSpeed = 8f;
 
     [Header("Animation Settings")]
-    public float pickupSpeed = 0.2f; // How fast it flies to your hand
-    public float takeSpeed = 0.3f;   // How fast it goes into your chest
+    public float pickupSpeed = 0.2f;
+    public float takeSpeed = 0.3f;
 
     public GameObject heldObj;
     private Rigidbody heldObjRb;
     private bool canDrop = true;
-    private bool isAnimating = false; // Locks inputs while object is animating
+    private bool isAnimating = false;
     private Vector3 localCenterOffset;
     private float dropCooldown = 0f;
 
-    // Internal targets for the smooth fade
     private float targetHoldAlpha = 0f;
     private float targetRotateAlpha = 0f;
 
@@ -61,24 +60,23 @@ public class PickUpScript : MonoBehaviour
 
     void Update()
     {
-        // Only allow movement, rotation, and inputs if we are NOT currently playing a pickup/take animation
         if (heldObj != null && !isAnimating)
         {
             MoveObject();
             RotateObject();
 
-            // 1. DROP ITEM (Now on 'X')
+            // 1. DROP ITEM ('X')
             if (Input.GetKeyDown(KeyCode.X) && canDrop == true)
             {
                 StopClipping();
                 DropObject();
             }
-            // 2. TAKE ITEM (Now on 'E')
+            // 2. TAKE ITEM ('E')
             else if (Input.GetKeyDown(KeyCode.E) && canDrop == true)
             {
                 TakeObject();
             }
-            // 3. THROW ITEM
+            // 3. THROW ITEM (Left Click)
             else if (Input.GetKeyDown(KeyCode.Mouse0) && canDrop == true)
             {
                 StopClipping();
@@ -137,13 +135,13 @@ public class PickUpScript : MonoBehaviour
             targetHoldAlpha = 1f;
             targetRotateAlpha = 0f;
 
-            // Start the smooth glide to our hands
             StartCoroutine(AnimatePickup());
         }
     }
+
     private IEnumerator AnimatePickup()
     {
-        isAnimating = true; // Lock controls
+        isAnimating = true;
         float timeElapsed = 0f;
         Vector3 startPos = heldObj.transform.position;
 
@@ -152,15 +150,12 @@ public class PickUpScript : MonoBehaviour
             timeElapsed += Time.deltaTime;
             float t = timeElapsed / pickupSpeed;
 
-            // Calculate where it should be right now
             Vector3 targetPos = holdPos.position - heldObj.transform.TransformDirection(localCenterOffset);
-
-            // Lerp from where it started on the floor, to the hold position
             heldObj.transform.position = Vector3.Lerp(startPos, targetPos, t);
             yield return null;
         }
 
-        isAnimating = false; // Unlock controls
+        isAnimating = false;
     }
 
     void TakeObject()
@@ -171,8 +166,8 @@ public class PickUpScript : MonoBehaviour
 
     private IEnumerator AnimateTake()
     {
-        isAnimating = true; // Lock controls
-        HideAllUI();        // Hide UI immediately
+        isAnimating = true;
+        HideAllUI();
 
         float timeElapsed = 0f;
         Vector3 startPos = heldObj.transform.position;
@@ -183,18 +178,13 @@ public class PickUpScript : MonoBehaviour
             timeElapsed += Time.deltaTime;
             float t = timeElapsed / takeSpeed;
 
-            // Move it down and to the left of the player (relative to the hold position)
-            Vector3 targetPos = holdPos.position + holdPos.right * 0.5f - holdPos.up * 0.6f;
-
+            Vector3 targetPos = holdPos.position - holdPos.right * 0.5f - holdPos.up * 0.6f;
             heldObj.transform.position = Vector3.Lerp(startPos, targetPos, t);
-
-            // Shrink it down to zero to simulate it entering a pocket/inventory (Highly optimized way to handle FOV leaving)
             heldObj.transform.localScale = Vector3.Lerp(startScale, Vector3.zero, t);
 
             yield return null;
         }
 
-        // Once the animation finishes, destroy it and clear hands
         Destroy(heldObj);
         heldObj = null;
         isAnimating = false;
@@ -240,25 +230,34 @@ public class PickUpScript : MonoBehaviour
         heldObj.transform.position = holdPos.position - heldObj.transform.TransformDirection(localCenterOffset);
     }
 
+    // --- NEW: Locked Axis Rotation Logic ---
     void RotateObject()
     {
         if (Input.GetKey(KeyCode.R))
         {
-            canDrop = false;
+            canDrop = false; // Disables Throw/Drop/Take while inspecting
             if (cameraLookScript != null) cameraLookScript.enabled = false;
 
             targetHoldAlpha = 0f;
             targetRotateAlpha = 1f;
 
-            float XaxisRotation = Input.GetAxis("Mouse X") * rotationSensitivity;
-            float YaxisRotation = Input.GetAxis("Mouse Y") * rotationSensitivity;
+            // Hold LEFT CLICK to rotate Horizontally
+            if (Input.GetMouseButton(0))
+            {
+                float xAxisRotation = Input.GetAxis("Mouse X") * rotationSensitivity;
+                heldObj.transform.Rotate(transform.up, -xAxisRotation, Space.World);
+            }
 
-            heldObj.transform.Rotate(transform.up, -XaxisRotation, Space.World);
-            heldObj.transform.Rotate(transform.right, YaxisRotation, Space.World);
+            // Hold RIGHT CLICK to rotate Vertically
+            if (Input.GetMouseButton(1))
+            {
+                float yAxisRotation = Input.GetAxis("Mouse Y") * rotationSensitivity;
+                heldObj.transform.Rotate(transform.right, yAxisRotation, Space.World);
+            }
         }
         else
         {
-            canDrop = true;
+            canDrop = true; // Enables actions again
             if (cameraLookScript != null) cameraLookScript.enabled = true;
 
             targetHoldAlpha = 1f;
